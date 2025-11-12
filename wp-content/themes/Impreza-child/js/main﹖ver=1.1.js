@@ -352,3 +352,261 @@ if (window.location.pathname.indexOf("/campagnes/") === 0) {
         });
     }
 }
+
+(function () {
+    const MOBILE_BREAKPOINT = 1024;
+
+    const isMobileViewport = () => window.innerWidth <= MOBILE_BREAKPOINT;
+
+    function initFallbackMobileMenu() {
+        const nav = document.querySelector('.l-header .w-nav');
+        if (!nav || nav.dataset.fallbackMobileMenu === 'ready') {
+            return;
+        }
+
+        const toggles = [];
+        const navToggle = nav.querySelector('.w-nav-control');
+        if (navToggle) {
+            toggles.push(navToggle);
+        }
+        const headerShow = document.getElementById('w-header-show');
+        if (headerShow) {
+            toggles.push(headerShow);
+        }
+        if (!toggles.length) {
+            return;
+        }
+
+        const sourceList = nav.querySelector('.w-nav-list.level_1');
+        if (!sourceList) {
+            return;
+        }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'fallback-mobile-menu';
+        overlay.setAttribute('aria-hidden', 'true');
+
+        const panel = document.createElement('div');
+        panel.className = 'fallback-mobile-menu__panel';
+        overlay.appendChild(panel);
+
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'fallback-mobile-menu__close';
+        closeButton.setAttribute('aria-label', 'Menu sluiten');
+        closeButton.innerHTML = '<span></span><span></span>';
+        panel.appendChild(closeButton);
+
+        const clonedList = sourceList.cloneNode(true);
+        clonedList.classList.add('fallback-mobile-menu__list');
+        clonedList.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'));
+        clonedList.querySelectorAll('.w-nav-close').forEach((element) => element.remove());
+        clonedList.querySelectorAll('.w-nav-arrow').forEach((element) => element.remove());
+        panel.appendChild(clonedList);
+
+        document.body.appendChild(overlay);
+
+        const submenuMap = new Map();
+        const parentItems = Array.from(clonedList.querySelectorAll('.menu-item-has-children'));
+        parentItems.forEach((item) => {
+            const anchor = item.querySelector(':scope > .w-nav-anchor');
+            const subList = item.querySelector(':scope > .w-nav-list');
+            if (!anchor || !subList) {
+                return;
+            }
+
+            subList.classList.add('fallback-mobile-menu__sublist');
+            subList.style.display = 'none';
+
+            anchor.setAttribute('aria-expanded', 'false');
+            item.classList.add('fallback-menu-has-children');
+
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'fallback-mobile-menu__submenu-toggle';
+            toggle.setAttribute('aria-expanded', 'false');
+            toggle.setAttribute('aria-label', `${anchor.textContent.trim()} submenu`);
+            toggle.innerHTML = '<span></span><span></span>';
+            item.insertBefore(toggle, subList);
+
+            submenuMap.set(item, { anchor, toggle, subList });
+        });
+
+        const html = document.documentElement;
+        let lastTrigger = null;
+
+        const collapseItem = (item) => {
+            const refs = submenuMap.get(item);
+            if (!refs) {
+                return;
+            }
+            item.classList.remove('fallback-sub-open');
+            refs.toggle.setAttribute('aria-expanded', 'false');
+            refs.anchor.setAttribute('aria-expanded', 'false');
+            refs.subList.style.display = 'none';
+        };
+
+        const expandItem = (item) => {
+            const refs = submenuMap.get(item);
+            if (!refs) {
+                return;
+            }
+            item.classList.add('fallback-sub-open');
+            refs.toggle.setAttribute('aria-expanded', 'true');
+            refs.anchor.setAttribute('aria-expanded', 'true');
+            refs.subList.style.display = 'block';
+        };
+
+        const collapseSiblings = (item) => {
+            const parent = item.parentElement;
+            if (!parent) {
+                return;
+            }
+            Array.from(parent.children)
+                .filter((sibling) => sibling !== item && sibling.classList && sibling.classList.contains('fallback-sub-open'))
+                .forEach((sibling) => collapseItem(sibling));
+        };
+
+        function closeMenu() {
+            if (!html.classList.contains('fallback-menu-open')) {
+                return;
+            }
+            html.classList.remove('fallback-menu-open');
+            html.classList.remove('w-nav-open');
+            overlay.setAttribute('aria-hidden', 'true');
+            overlay.classList.remove('fallback-mobile-menu--visible');
+            toggles.forEach((button) => {
+                button.setAttribute('aria-expanded', 'false');
+                if (button.classList.contains('w-nav-control')) {
+                    button.classList.remove('active');
+                }
+            });
+            submenuMap.forEach((_refs, item) => collapseItem(item));
+            overlay.scrollTop = 0;
+            document.removeEventListener('keydown', handleKeydown);
+            if (lastTrigger && typeof lastTrigger.focus === 'function') {
+                try {
+                    lastTrigger.focus({ preventScroll: true });
+                } catch (_error) {
+                    lastTrigger.focus();
+                }
+            }
+            lastTrigger = null;
+        }
+
+        function openMenu(trigger) {
+            if (html.classList.contains('fallback-menu-open')) {
+                return;
+            }
+            lastTrigger = trigger instanceof HTMLElement ? trigger : null;
+            html.classList.add('fallback-menu-open');
+            html.classList.add('w-nav-open');
+            overlay.setAttribute('aria-hidden', 'false');
+            overlay.classList.add('fallback-mobile-menu--visible');
+            toggles.forEach((button) => {
+                button.setAttribute('aria-expanded', 'true');
+                if (button.classList.contains('w-nav-control')) {
+                    button.classList.add('active');
+                }
+            });
+            const firstLink = clonedList.querySelector('.w-nav-anchor');
+            if (firstLink) {
+                firstLink.focus({ preventScroll: true });
+            }
+            document.addEventListener('keydown', handleKeydown);
+        }
+
+        const handleKeydown = (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeMenu();
+            }
+        };
+
+        parentItems.forEach((item) => {
+            const refs = submenuMap.get(item);
+            if (!refs) {
+                return;
+            }
+
+            refs.toggle.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const isOpen = item.classList.contains('fallback-sub-open');
+                if (isOpen) {
+                    collapseItem(item);
+                } else {
+                    collapseSiblings(item);
+                    expandItem(item);
+                }
+            });
+
+            refs.anchor.addEventListener('click', (event) => {
+                const isOpen = item.classList.contains('fallback-sub-open');
+                if (!isOpen) {
+                    event.preventDefault();
+                    collapseSiblings(item);
+                    expandItem(item);
+                } else {
+                    closeMenu();
+                }
+            });
+        });
+
+        const onToggleClick = (event) => {
+            if (!isMobileViewport()) {
+                closeMenu();
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            if (html.classList.contains('fallback-menu-open')) {
+                closeMenu();
+            } else {
+                openMenu(event.currentTarget);
+            }
+        };
+
+        toggles.forEach((button) => {
+            button.setAttribute('aria-expanded', 'false');
+            button.addEventListener('click', onToggleClick, true);
+        });
+
+        closeButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            closeMenu();
+        });
+
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                closeMenu();
+            }
+        });
+
+        clonedList.addEventListener('click', (event) => {
+            const anchor = event.target.closest('.w-nav-anchor');
+            if (!anchor) {
+                return;
+            }
+            const parentItem = anchor.closest('.menu-item-has-children');
+            if (!parentItem || !parentItem.classList.contains('fallback-sub-open')) {
+                closeMenu();
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            if (!isMobileViewport()) {
+                closeMenu();
+            }
+        });
+
+        nav.dataset.fallbackMobileMenu = 'ready';
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initFallbackMobileMenu);
+    } else {
+        initFallbackMobileMenu();
+    }
+})();
